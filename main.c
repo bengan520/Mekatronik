@@ -16,12 +16,12 @@
 #define STATE_11 0b00110000
 #define COUNTER_BUF_SIZE 16
 #define PRESCALER 8
-#define KP 1 // Proportional gain
-#define KI 1 // Integral gain
-#define FIXED_POINT_SCALE 16
+//#define KP 3 // Proportional gain
+//#define KI 1 // Integral gain
+#define FIXED_POINT_SCALE 8
 #define VREF 5
 #define RESOLUTION 1024
-#define dt 0.132
+//#define dt 132	// deltaT in ms
 
 /**** INCLUDING STUFF ****/
 #include <avr/io.h>
@@ -53,7 +53,7 @@ int updatePWM(int value);
 
 unsigned int rpm();
 unsigned long ticks_sum();
-int fixedPointMultiply(int x, int y);
+int32_t fixedPointMultiply(int32_t x, int32_t y);
 void filter(unsigned int i);
 void ADC_tuner();
 
@@ -70,11 +70,14 @@ uint8_t ABnew;
 volatile uint8_t pwmvalue =50;
 volatile unsigned int counter_register[COUNTER_BUF_SIZE];
 volatile unsigned int cur_buff_index = 0;
-int integral = 0;
+int32_t integral = 0;
 int n = 0;
 volatile uint8_t AB;
 uint8_t ABnew;
 int tuner = 0;		// int to hold the value of the ADC_tuner [-10,10]
+int32_t dt = 0.132 * (1 << FIXED_POINT_SCALE); //multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
+int32_t KP = 3 << FIXED_POINT_SCALE;
+int32_t KI = 10 << FIXED_POINT_SCALE;
 
 int main(void)
 {
@@ -108,23 +111,23 @@ int main(void)
 void filter(unsigned int i){
 	
 	ABnew = PINC & ((1<<PINC5) | (1<<PINC4));
-	
-	// Checks the direction of the encoder ticks, so that we filter out all the ticks that we register in the wrong direction
-	switch(ABnew)
-	{
-
-		case STATE_00 : if (AB==STATE_01){i=0;} else /*AB==16*/ {} break;
-		case STATE_01 : if (AB==STATE_11){i=0;} else /*AB==48*/ {} break;
-		case STATE_10 : if (AB==STATE_00){i=0;} else /*AB==0*/ {} break;
-		case STATE_11 : if (AB==STATE_10){i=0;} else /*AB==32*/ {} break;
-
 		
-		default: PORTB = PORTB |(1<<PB1);
-		break;
-	}
-	AB = ABnew;
+		// Checks the direction of the encoder ticks, so that we filter out all the ticks that we register in the wrong direction
+		switch(ABnew)
+		{
 	
+			case STATE_00 : if (AB==STATE_01){i=0;} else /*AB==16*/ {} break;
+			case STATE_01 : if (AB==STATE_11){i=0;} else /*AB==48*/ {} break;
+			case STATE_10 : if (AB==STATE_00){i=0;} else /*AB==0*/ {} break;
+			case STATE_11 : if (AB==STATE_10){i=0;} else /*AB==32*/ {} break;
 	
+			
+			default: PORTB = PORTB |(1<<PB1);
+			break;
+		}
+		AB = ABnew;
+		
+		
 	
 	/* Filter out timer values outside the range 5-237 rpm atm, allowing higher end rpm values because otherwise cannot reach correct rpm*/
 	if(i>330 && i < 15625){
@@ -146,24 +149,17 @@ unsigned int rpm() {
 	return (60*F_CPU*COUNTER_BUF_SIZE)/((long) ticks_sum()*PRESCALER*96);
 }
 
-// int fixedPointMultiply(int x, int y) {
-// 	return (x * y) >> FIXED_POINT_SCALE;
-// }
-
-// int32_t fixedPointMultiply(int32_t x, int32_t y) {
-// 	int64_t result = (int64_t)x * y;
-// 	return result >>16;
-// }
 
 
-// int fixedPointDivide(int x, int y) {
-// 	return (x << FIXED_POINT_SCALE) / y;
-// }
+int32_t fixedPointMultiply(int32_t x, int32_t y) {
+	int64_t result = (int64_t)x * y;
+	int32_t rounding = 0.5 * (1<<FIXED_POINT_SCALE);		//Makes the rounding better for the ints
+	result+=rounding;
+	return result >> FIXED_POINT_SCALE;		// Divides by fixed_point_scale so that we return it with just fixed_point_scale number of decimal bits and not fixed_point_scale^2 number of bits (since we multiply 2 scaled ints)
+}
 
-// int32_t fixed_point_divide(int32_t a, int32_t b) {
-// 	int64_t result = ((int64_t)a << 16) / b;
-// 	return result;
-// }
+
+
 
 /*******************************************INTERRUPT FUNCTIONS**************************************************
 *****************************************************************************************************************
@@ -231,7 +227,7 @@ void stringReceiver(){
 	for(int i = 0; i < 3; i++){
 		stringReceive[i] = USART_Receive();
 	}
-	
+	//integral = 0;	//resets the integral part
 	pwmvalue = atoi(stringReceive);
 	
 }
@@ -304,11 +300,10 @@ int updatePWM(int newrpm)
 newrpm = newrpm + tuner; // changes the rpm value if we turn the potentiometer	
 	
 int currentrpm = rpm();
-int error = newrpm - currentrpm;
-integral += error;
-//integral += error * dt;
-int value = KP* error + KI * integral;
-//int value = fixedPointMultiply(KP,error) + fixedPointMultiply(fixedPointDivide(1,2),integral);
+int32_t error = (newrpm - currentrpm) * (1<<FIXED_POINT_SCALE);
+integral += fixedPointMultiply(error,dt);
+int value = (fixedPointMultiply(KP,error) + fixedPointMultiply(KI,integral))  >> FIXED_POINT_SCALE;
+
 
 if(value > 255){
 	value = 255;
@@ -318,7 +313,7 @@ else if (value < 0){
 	value = 0;
 }
 	
-OCR0A = value;
+//OCR0A = value;
 OCR0B = value;
 return value;
 }
