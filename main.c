@@ -16,12 +16,10 @@
 #define STATE_11 0b00110000
 #define COUNTER_BUF_SIZE 16
 #define PRESCALER 8
-//#define KP 3 // Proportional gain
-//#define KI 1 // Integral gain
 #define FIXED_POINT_SCALE 8
 #define VREF 5
 #define RESOLUTION 1024
-//#define dt 132	// deltaT in ms
+
 
 /**** INCLUDING STUFF ****/
 #include <avr/io.h>
@@ -58,12 +56,6 @@ void filter(unsigned int i);
 void ADC_tuner();
 
 
-//TODO: Ta bort delayen i while loopen o ersätt med att räkna antalet overflows för PWM timern. Annars blir delayen olika lång varje gång.
-//Fixa fixed point calculations i updatepwm funktionen
-// Fixa ADC ingången för att fixa potentiometern
-//Multiplicera med deltaT i integraldelen
-
-
 /**** DEFINE VARIABLES ****/
 volatile uint8_t AB;
 uint8_t ABnew;
@@ -72,12 +64,15 @@ volatile unsigned int counter_register[COUNTER_BUF_SIZE];
 volatile unsigned int cur_buff_index = 0;
 int32_t integral = 0;
 int n = 0;
+// int32_t old_i;		//Variable to store previous measured time for our filter
+// int32_t scaler1 = 0.7 * (1 << FIXED_POINT_SCALE);		//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int
+// int32_t scaler2 = (1-0.7) * (1 << FIXED_POINT_SCALE); 	//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int
 volatile uint8_t AB;
 uint8_t ABnew;
 int tuner = 0;		// int to hold the value of the ADC_tuner [-10,10]
 int32_t dt = 0.132 * (1 << FIXED_POINT_SCALE); //multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
-int32_t KP = 3 << FIXED_POINT_SCALE;
-int32_t KI = 10 << FIXED_POINT_SCALE;
+int32_t KP = 3 << FIXED_POINT_SCALE;			//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
+int32_t KI = 7 << FIXED_POINT_SCALE;			//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
 
 int main(void)
 {
@@ -110,7 +105,7 @@ int main(void)
 //Filters the encoder ticks to improve accuracy of the controller
 void filter(unsigned int i){
 	
-	ABnew = PINC & ((1<<PINC5) | (1<<PINC4));
+		ABnew = PINC & ((1<<PINC5) | (1<<PINC4));
 		
 		// Checks the direction of the encoder ticks, so that we filter out all the ticks that we register in the wrong direction
 		switch(ABnew)
@@ -127,13 +122,16 @@ void filter(unsigned int i){
 		}
 		AB = ABnew;
 		
-		
+// 		int32_t hold_i = i  << FIXED_POINT_SCALE;		//bit shifts the measured i to be able to do the fixed point calculations for this part of the filter
+// 		int32_t new_i = (fixedPointMultiply(hold_i,scaler1) + fixedPointMultiply(old_i,scaler2));	//Performs the fixed point calculations and then bit shifts it back to correct form
+// 		old_i = new_i;							//saves the value in old_i to next iteration
+// 		new_i = new_i >> FIXED_POINT_SCALE;		//bit shifts back to correct form
 	
 	/* Filter out timer values outside the range 5-237 rpm atm, allowing higher end rpm values because otherwise cannot reach correct rpm*/
-	if(i>330 && i < 15625){
-		counter_register[cur_buff_index%COUNTER_BUF_SIZE] = i; // Store timer value in buffer
-		cur_buff_index++;
-	}
+ 	if(i>330 && i < 15625){
+ 		counter_register[cur_buff_index%COUNTER_BUF_SIZE] = i; // Store timer value in buffer
+ 		cur_buff_index++;
+ 	}
 }
 
 /*Adds all the timer values in the buffer*/
