@@ -53,24 +53,36 @@ int main(void)
 	
 	while (1) {
 		
-		printf("Enter ""r"" to read the current rpm or ""w"" to write a new");
+		printf("Enter ""r"" to read the current rpm or ""w"" to write a new or ""a"" to see tuner");
 		printf("\n");
 		scanf("%s",cout);
 		
 		
- 		
+		
 		if(cout[0]=='r'){
 			
 			write(sp,cout,1);
- 			//read(sp,&cin,3);
+			//read(sp,&cin,3);
 			read(sp,&cin[0],1);
 			read(sp,&cin[1],1);
 			read(sp,&cin[2],1);
- 			printf("rpm = ");
- 			printf(cin);
+			printf("rpm = ");
+			printf(cin);
 			printf("\n");
 		}
-			 
+		
+		if(cout[0]=='a'){
+			
+			write(sp,cout,1);
+			//read(sp,&cin,3);
+			read(sp,&cin[0],1);
+			read(sp,&cin[1],1);
+			read(sp,&cin[2],1);
+			printf("tuner = ");
+			printf(cin);
+			printf("\n");
+		}
+		
 		if(cout[0]=='w'){
 			
 			write(sp,cout,1);
@@ -81,22 +93,22 @@ int main(void)
 				write(sp,cout,3);
 				printf("New rpm = %d",atoi(cout));
 				printf("\n");
-			
 				
-			} 
- 			else if (atoi(cout) < 5){
-	 			printf("Lowest allowed RPM is 5");
-	 			printf("\n");
- 			}
-			 else if (atoi(cout) > 120){
-				 printf("Highest allowed RPM is 120");
-				 printf("\n");
-			 }
+				
+			}
+			else if (atoi(cout) < 5){
+				printf("Lowest allowed RPM is 5");
+				printf("\n");
+			}
+			else if (atoi(cout) > 120){
+				printf("Highest allowed RPM is 120");
+				printf("\n");
+			}
 			else{
 				printf("Input not allowed");
 				printf("\n");
-			} 
- 		}
+			}
+		}
 		
 		
 
@@ -105,4 +117,4 @@ int main(void)
 	/*Close the serial port */
 	serial_cleanup(sp);
 	return 1;
-} 
+}
