@@ -70,9 +70,9 @@ int n = 0;
 volatile uint8_t AB;
 uint8_t ABnew;
 int tuner = 0;		// int to hold the value of the ADC_tuner [-10,10]
-int32_t dt = 0.132 * (1 << FIXED_POINT_SCALE); //multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
-int32_t KP = 3 << FIXED_POINT_SCALE;			//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
-int32_t KI = 7 << FIXED_POINT_SCALE;			//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int 
+int32_t dt = 0.132 * (1 << FIXED_POINT_SCALE); //multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int
+int32_t KP = 0.6 * (1 << FIXED_POINT_SCALE);			//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int
+int32_t KI = 3 << FIXED_POINT_SCALE;			//multiplying by 2^FIXED_POINT_SCALE to keep accuracy of decimals but have it in an int
 
 int main(void)
 {
@@ -105,33 +105,33 @@ int main(void)
 //Filters the encoder ticks to improve accuracy of the controller
 void filter(unsigned int i){
 	
-		ABnew = PINC & ((1<<PINC5) | (1<<PINC4));
-		
-		// Checks the direction of the encoder ticks, so that we filter out all the ticks that we register in the wrong direction
-		switch(ABnew)
-		{
+	ABnew = PINC & ((1<<PINC5) | (1<<PINC4));
 	
-			case STATE_00 : if (AB==STATE_01){i=0;} else /*AB==16*/ {} break;
-			case STATE_01 : if (AB==STATE_11){i=0;} else /*AB==48*/ {} break;
-			case STATE_10 : if (AB==STATE_00){i=0;} else /*AB==0*/ {} break;
-			case STATE_11 : if (AB==STATE_10){i=0;} else /*AB==32*/ {} break;
-	
-			
-			default: PORTB = PORTB |(1<<PB1);
-			break;
-		}
-		AB = ABnew;
+	// Checks the direction of the encoder ticks, so that we filter out all the ticks that we register in the wrong direction
+	switch(ABnew)
+	{
 		
-// 		int32_t hold_i = i  << FIXED_POINT_SCALE;		//bit shifts the measured i to be able to do the fixed point calculations for this part of the filter
-// 		int32_t new_i = (fixedPointMultiply(hold_i,scaler1) + fixedPointMultiply(old_i,scaler2));	//Performs the fixed point calculations and then bit shifts it back to correct form
-// 		old_i = new_i;							//saves the value in old_i to next iteration
-// 		new_i = new_i >> FIXED_POINT_SCALE;		//bit shifts back to correct form
+		case STATE_00 : if (AB==STATE_01){i=0;} else /*AB==16*/ {} break;
+		case STATE_01 : if (AB==STATE_11){i=0;} else /*AB==48*/ {} break;
+		case STATE_10 : if (AB==STATE_00){i=0;} else /*AB==0*/ {} break;
+		case STATE_11 : if (AB==STATE_10){i=0;} else /*AB==32*/ {} break;
+		
+		
+		default: PORTB = PORTB |(1<<PB1);
+		break;
+	}
+	AB = ABnew;
+	
+	// 		int32_t hold_i = i  << FIXED_POINT_SCALE;		//bit shifts the measured i to be able to do the fixed point calculations for this part of the filter
+	// 		int32_t new_i = (fixedPointMultiply(hold_i,scaler1) + fixedPointMultiply(old_i,scaler2));	//Performs the fixed point calculations and then bit shifts it back to correct form
+	// 		old_i = new_i;							//saves the value in old_i to next iteration
+	// 		new_i = new_i >> FIXED_POINT_SCALE;		//bit shifts back to correct form
 	
 	/* Filter out timer values outside the range 5-237 rpm atm, allowing higher end rpm values because otherwise cannot reach correct rpm*/
- 	if(i>330 && i < 15625){
- 		counter_register[cur_buff_index%COUNTER_BUF_SIZE] = i; // Store timer value in buffer
- 		cur_buff_index++;
- 	}
+	if(i>330 && i < 15625){
+		counter_register[cur_buff_index%COUNTER_BUF_SIZE] = i; // Store timer value in buffer
+		cur_buff_index++;
+	}
 }
 
 /*Adds all the timer values in the buffer*/
@@ -169,7 +169,7 @@ ISR(TIMER2_OVF_vect){
 	cli();
 	n = n+1;
 	if(n == 2){
-		ADC_tuner();				
+		ADC_tuner();
 		updatePWM(pwmvalue);	//Updates PWM with 66*2= 132 ms intervals
 		n=0;
 	}
@@ -192,9 +192,12 @@ ISR(USART_RX_vect){
 	else if(c=='w'){
 		stringReceiver();
 	}
+	else if(c=='a'){
+		send_rpm(tuner);
+	}
 }
 
-/* Timer overflow interrupt function*/ISR (TIMER1_OVF_vect)
+/* Timer overflow interrupt function*/ISR (TIMER1_OVF_vect)
 {
 	/* Toggle a pin on timer overflow */
 	
@@ -285,35 +288,34 @@ int ADC_input(void){
 /* Turns off all the leds except our power-on LED*/
 void all_leds_off( void )
 {
-PORTB = PORTB & ~(1<<PB1); //turns off the B led
-PORTD &= ~((1<<PD2)|(1<<PD3)|(1<<PD4)); //turns off all D leds
+	PORTB = PORTB & ~(1<<PB1); //turns off the B led
+	PORTD &= ~((1<<PD2)|(1<<PD3)|(1<<PD4)); //turns off all D leds
 
 }
-
 
 //updates PWM registers with the value we send in..
 int updatePWM(int newrpm)
 {
 	
-newrpm = newrpm + tuner; // changes the rpm value if we turn the potentiometer	
+	newrpm = newrpm + tuner; // changes the rpm value if we turn the potentiometer
 	
-int currentrpm = rpm();
-int32_t error = (newrpm - currentrpm) * (1<<FIXED_POINT_SCALE);
-integral += fixedPointMultiply(error,dt);
-int value = (fixedPointMultiply(KP,error) + fixedPointMultiply(KI,integral))  >> FIXED_POINT_SCALE;
+	int currentrpm = rpm();
+	int32_t error = (newrpm - currentrpm) * (1<<FIXED_POINT_SCALE);
+	integral += fixedPointMultiply(error,dt);
+	int value = (fixedPointMultiply(KP,error) + fixedPointMultiply(KI,integral))  >> FIXED_POINT_SCALE;
 
 
-if(value > 255){
-	value = 255;
-}
+	if(value > 255){
+		value = 255;
+	}
 
-else if (value < 0){
-	value = 0;
-}
+	else if (value < 0){
+		value = 0;
+	}
 	
-//OCR0A = value;
-OCR0B = value;
-return value;
+	//OCR0A = value;
+	OCR0B = value;
+	return value;
 }
 
 
@@ -389,12 +391,12 @@ void init_Ex1(void)
 	TIFR1 = 1<<TOV1;
 	/* Enable Overflow Interrupt */
 	//TIMSK1 = 1<<TOIE1;
-}/* Initializes the encoder interrupt pins*/
-int init_INTs(void)
-{
-	DDRC &= ~((1<<DDC4)|(1<<DDC5));	// PINC4 - PINC5 set as inputs
-	PORTC &= (1<<PC4)|(1<<PC5);
-	PCMSK1 |= (1<<PCINT12)|(1<<PCINT13);   // PCINT12 and PCINT13  enabled
-	PCICR |= (1<<PCIE1);	// The PC interrupt group 1 (PCINT8 -> PCINT14) enabled
-	return 1;
-}
+	}/* Initializes the encoder interrupt pins*/
+	int init_INTs(void)
+	{
+		DDRC &= ~((1<<DDC4)|(1<<DDC5));	// PINC4 - PINC5 set as inputs
+		PORTC &= (1<<PC4)|(1<<PC5);
+		PCMSK1 |= (1<<PCINT12)|(1<<PCINT13);   // PCINT12 and PCINT13  enabled
+		PCICR |= (1<<PCIE1);	// The PC interrupt group 1 (PCINT8 -> PCINT14) enabled
+		return 1;
+	}
